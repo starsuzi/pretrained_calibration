@@ -101,7 +101,7 @@ if [ $MODEL = "roberta-base" ]; then
     LEARNING_RATE=1e-5
     WEIGHT_DECAY=0.1
 fi
-
+python
 python3 train.py \
     --device $DEVICE \
     --model $MODEL \

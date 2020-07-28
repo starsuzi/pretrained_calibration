@@ -381,6 +381,36 @@ class LabelSmoothingLoss(nn.Module):
         return F.kl_div(F.log_softmax(output, 1), model_prob, reduction='sum')
 
 
+def mixup_data(self, x, y=None, alpha=0.2, runs = 1):
+    """This method performs mixup. If runs = 1 it just does 1 mixup with whole batch, any n of runs
+    creates many mixup matches.
+    :type x: Numpy array
+    :param x: Data array
+    :type y: Numpy array
+    :param y: (optional) labels
+    :type alpha: float
+    :param alpha: alpha
+    :rtype: tuple
+    :return: Returns mixed inputs, pairs of targets, and lambda
+    """
+    if runs is None:
+        runs = 1
+    output_x = []
+    output_y = []
+    batch_size = x.shape[0]
+    for i in range(runs):
+        lam_vector = np.random.beta(alpha, alpha, batch_size)
+        index = np.random.permutation(batch_size)
+        mixed_x = (x.T * lam_vector).T + (x[index, :].T * (1.0 - lam_vector)).T
+        output_x.append(mixed_x)
+        if y is None:
+            return np.concatenate(output_x, axis=0)
+        mixed_y = (y.T * lam_vector).T + (y[index].T * (1.0 - lam_vector)).T
+        output_y.append(mixed_y)
+    con_output_x = np.concatenate(output_x, axis=0)
+    con_output_y = np.concatenate(output_y, axis=0)
+    return Variable(con_output_x), Variable(con_output_y)
+
 def train(dataset):
     """Fine-tunes pre-trained model on training set."""
 
@@ -389,6 +419,9 @@ def train(dataset):
     train_loader = tqdm(load(dataset, args.batch_size, True))
     optimizer = AdamW(adamw_params(model), lr=args.learning_rate, eps=1e-8)
     for i, (inputs, label) in enumerate(train_loader, 1):
+        #mixup
+        inputs, label = mixup_data(inputs, label)
+
         optimizer.zero_grad()
         loss = criterion(model(*inputs), label)
         train_loss += loss.item()
@@ -407,6 +440,9 @@ def evaluate(dataset):
     eval_loss = 0.
     eval_loader = tqdm(load(dataset, args.batch_size, False))
     for i, (inputs, label) in enumerate(eval_loader, 1):
+        #mixup
+        inputs, label = mixup_data(inputs, label)
+        
         with torch.no_grad():
             loss = criterion(model(*inputs), label)
         eval_loss += loss.item()
