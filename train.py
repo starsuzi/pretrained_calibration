@@ -409,7 +409,7 @@ def mixup_data(self, x, y=None, alpha=0.2, runs = 1):
         output_y.append(mixed_y)
     con_output_x = np.concatenate(output_x, axis=0)
     con_output_y = np.concatenate(output_y, axis=0)
-    return Variable(con_output_x), Variable(con_output_y)
+    return torch.Variable(con_output_x), torch.Variable(con_output_y)
 
 def train(dataset):
     """Fine-tunes pre-trained model on training set."""
