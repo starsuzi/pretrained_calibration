@@ -34,6 +34,8 @@ parser.add_argument('--label_smoothing', type=float, default=-1., help='label sm
 parser.add_argument('--max_grad_norm', type=float, default=1., help='gradient clip')
 parser.add_argument('--do_train', action='store_true', default=False, help='enable training')
 parser.add_argument('--do_evaluate', action='store_true', default=False, help='enable evaluation')
+parser.add_argument('--do_mixup', action='store_true', default=False, help='enable mixup')
+
 args = parser.parse_args()
 print(args)
 
@@ -380,8 +382,7 @@ class LabelSmoothingLoss(nn.Module):
         model_prob.scatter_(1, target.unsqueeze(1), self.confidence)
         return F.kl_div(F.log_softmax(output, 1), model_prob, reduction='sum')
 
-
-def mixup_data(self, x, y=None, alpha=0.2, runs = 1):
+def mixup_data(x, y=None, alpha=0.2, runs=None):
     """This method performs mixup. If runs = 1 it just does 1 mixup with whole batch, any n of runs
     creates many mixup matches.
     :type x: Numpy array
@@ -398,29 +399,42 @@ def mixup_data(self, x, y=None, alpha=0.2, runs = 1):
     output_x = []
     output_y = []
     batch_size = x.shape[0]
+
+    #print(batch_size)
+
     for i in range(runs):
         lam_vector = np.random.beta(alpha, alpha, batch_size)
+        lam_vector = torch.tensor(lam_vector)
         index = np.random.permutation(batch_size)
+
+        x = x.cpu().double()
+
         mixed_x = (x.T * lam_vector).T + (x[index, :].T * (1.0 - lam_vector)).T
         output_x.append(mixed_x)
+        
         if y is None:
-            return np.concatenate(output_x, axis=0)
+            return cuda((torch.tensor(np.concatenate(output_x, axis=0)).long()))
+
+        y = y.cpu().double()    
         mixed_y = (y.T * lam_vector).T + (y[index].T * (1.0 - lam_vector)).T
         output_y.append(mixed_y)
-    con_output_x = np.concatenate(output_x, axis=0)
-    con_output_y = np.concatenate(output_y, axis=0)
-    return torch.Variable(con_output_x), torch.Variable(con_output_y)
-
+    return cuda((torch.tensor(np.concatenate(output_x, axis=0)).long())), cuda((torch.tensor(np.concatenate(output_y, axis=0)).long()))
+    
 def train(dataset):
     """Fine-tunes pre-trained model on training set."""
 
     model.train()
     train_loss = 0.
+    
     train_loader = tqdm(load(dataset, args.batch_size, True))
+    
     optimizer = AdamW(adamw_params(model), lr=args.learning_rate, eps=1e-8)
     for i, (inputs, label) in enumerate(train_loader, 1):
         #mixup
-        inputs, label = mixup_data(inputs, label)
+        if args.do_mixup :
+            #print('mixup')
+            input_id, label = mixup_data(inputs[0], label)
+            inputs[0] = input_id
 
         optimizer.zero_grad()
         loss = criterion(model(*inputs), label)
@@ -441,7 +455,9 @@ def evaluate(dataset):
     eval_loader = tqdm(load(dataset, args.batch_size, False))
     for i, (inputs, label) in enumerate(eval_loader, 1):
         #mixup
-        inputs, label = mixup_data(inputs, label)
+        if args.do_mixup :
+            input_id, label = mixup_data(inputs[0], label)
+            inputs[0] = input_id
         
         with torch.no_grad():
             loss = criterion(model(*inputs), label)
