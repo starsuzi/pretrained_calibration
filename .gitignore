@@ -3,3 +3,6 @@
 __pycache__/
 venv/
 calibration_data/
+ckpt/
+runs/
+output/
