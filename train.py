@@ -13,6 +13,11 @@ from sklearn.metrics import accuracy_score, f1_score
 from transformers import AdamW, AutoModel, AutoTokenizer
 from tqdm import tqdm
 
+from pathlib import Path
+from tensorboardX import SummaryWriter
+
+
+summary = SummaryWriter()
 
 csv.field_size_limit(sys.maxsize)
 
@@ -414,11 +419,13 @@ def mixup_data(x, y=None, alpha=0.2, runs=None):
         
         if y is None:
             return cuda((torch.tensor(np.concatenate(output_x, axis=0)).long()))
+            #return cuda((torch.tensor(np.concatenate(output_x, axis=0))))
 
         y = y.cpu().double()    
         mixed_y = (y.T * lam_vector).T + (y[index].T * (1.0 - lam_vector)).T
         output_y.append(mixed_y)
     return cuda((torch.tensor(np.concatenate(output_x, axis=0)).long())), cuda((torch.tensor(np.concatenate(output_y, axis=0)).long()))
+    #return cuda((torch.tensor(np.concatenate(output_x, axis=0)))), cuda((torch.tensor(np.concatenate(output_y, axis=0))))
     
 def train(dataset):
     """Fine-tunes pre-trained model on training set."""
@@ -435,8 +442,18 @@ def train(dataset):
             #print('mixup')
             input_id, label = mixup_data(inputs[0], label)
             inputs[0] = input_id
+            #inputs[1] = inputs[1].double()
+            #inputs[2] = inputs[2].double()
+            #print(inputs)
 
         optimizer.zero_grad()
+
+        #m = nn.LogSoftmax()
+        #print('asdf')
+        #print(model(*inputs))
+        #loss = -m(model(*inputs)) * label
+        #print(loss)
+        #print(criterion(model(*inputs), label))
         loss = criterion(model(*inputs), label)
         train_loss += loss.item()
         train_loader.set_description(f'train loss = {(train_loss / i):.6f}')
@@ -444,6 +461,8 @@ def train(dataset):
         if args.max_grad_norm > 0.:
             nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
         optimizer.step()
+        if i%10 == 0:
+            summary.add_scalar('loss/loss',loss.item(),i)
     return train_loss / len(train_loader)
 
 
