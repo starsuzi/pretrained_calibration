@@ -413,7 +413,6 @@ def mixup_data(x, y=None, alpha=0.2, runs=None):
         index = np.random.permutation(batch_size)
 
         x = x.cpu().double()
-
         mixed_x = (x.T * lam_vector).T + (x[index, :].T * (1.0 - lam_vector)).T
         output_x.append(mixed_x)
         
@@ -439,21 +438,11 @@ def train(dataset):
     for i, (inputs, label) in enumerate(train_loader, 1):
         #mixup
         if args.do_mixup :
-            #print('mixup')
             input_id, label = mixup_data(inputs[0], label)
-            inputs[0] = input_id
-            #inputs[1] = inputs[1].double()
-            #inputs[2] = inputs[2].double()
-            #print(inputs)
-
+            
         optimizer.zero_grad()
-
-        #m = nn.LogSoftmax()
-        #print('asdf')
         #print(model(*inputs))
-        #loss = -m(model(*inputs)) * label
-        #print(loss)
-        #print(criterion(model(*inputs), label))
+
         loss = criterion(model(*inputs), label)
         train_loss += loss.item()
         train_loader.set_description(f'train loss = {(train_loss / i):.6f}')
