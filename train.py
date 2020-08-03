@@ -439,6 +439,7 @@ def train(dataset):
         #mixup
         if args.do_mixup :
             input_id, label = mixup_data(inputs[0], label)
+            inputs[0] = input_id
             
         optimizer.zero_grad()
         #print(model(*inputs))
