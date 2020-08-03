@@ -387,6 +387,45 @@ class LabelSmoothingLoss(nn.Module):
         model_prob.scatter_(1, target.unsqueeze(1), self.confidence)
         return F.kl_div(F.log_softmax(output, 1), model_prob, reduction='sum')
 
+def embed_mixup_data(x, y=None, alpha=0.2, runs=None):
+    """This method performs mixup. If runs = 1 it just does 1 mixup with whole batch, any n of runs
+    creates many mixup matches.
+    :type x: Numpy array
+    :param x: Data array
+    :type y: Numpy array
+    :param y: (optional) labels
+    :type alpha: float
+    :param alpha: alpha
+    :rtype: tuple
+    :return: Returns mixed inputs, pairs of targets, and lambda
+    """
+    if runs is None:
+        runs = 1
+    output_x = []
+    output_y = []
+    batch_size = x.shape[0]
+
+    #print(batch_size)
+
+    for i in range(runs):
+        lam_vector = np.random.beta(alpha, alpha, batch_size)
+        lam_vector = torch.tensor(lam_vector)
+        index = np.random.permutation(batch_size)
+
+        x = x.cpu().double()
+        mixed_x = (x.T * lam_vector).T + (x[index, :].T * (1.0 - lam_vector)).T
+        output_x.append(mixed_x)
+        
+        if y is None:
+            return cuda((torch.tensor(np.concatenate(output_x, axis=0)).long()))
+            #return cuda((torch.tensor(np.concatenate(output_x, axis=0))))
+
+        y = y.cpu().double()    
+        mixed_y = (y.T * lam_vector).T + (y[index].T * (1.0 - lam_vector)).T
+        output_y.append(mixed_y)
+    return cuda((torch.tensor(np.concatenate(output_x, axis=0)).long())), cuda((torch.tensor(np.concatenate(output_y, axis=0)).long()))
+    #return cuda((torch.tensor(np.concatenate(output_x, axis=0)))), cuda((torch.tensor(np.concatenate(output_y, axis=0))))
+
 def mixup_data(x, y=None, alpha=0.2, runs=None):
     """This method performs mixup. If runs = 1 it just does 1 mixup with whole batch, any n of runs
     creates many mixup matches.
@@ -462,6 +501,11 @@ def evaluate(dataset):
     eval_loss = 0.
     eval_loader = tqdm(load(dataset, args.batch_size, False))
     for i, (inputs, label) in enumerate(eval_loader, 1):
+        #mixup
+        #if args.do_mixup :
+        #    input_id, label = mixup_data(inputs[0], label)
+        #    inputs[0] = input_id
+        
         with torch.no_grad():
             loss = criterion(model(*inputs), label)
         eval_loss += loss.item()
