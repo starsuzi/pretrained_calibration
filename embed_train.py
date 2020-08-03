@@ -405,8 +405,6 @@ def embed_mixup_data(x, y=None, alpha=0.2, runs=None):
     output_y = []
     batch_size = x.shape[0]
 
-    #print(batch_size)
-
     for i in range(runs):
         lam_vector = np.random.beta(alpha, alpha, batch_size)
         lam_vector = torch.tensor(lam_vector)
@@ -414,16 +412,19 @@ def embed_mixup_data(x, y=None, alpha=0.2, runs=None):
 
         x = x.cpu().double()
         mixed_x = (x.T * lam_vector).T + (x[index, :].T * (1.0 - lam_vector)).T
+        mixed_x = mixed_x.detach().numpy()
         output_x.append(mixed_x)
-        
+
         if y is None:
-            return cuda((torch.tensor(np.concatenate(output_x, axis=0)).long()))
+            return cuda((torch.tensor(np.concatenate(output_x, axis=0))))
             #return cuda((torch.tensor(np.concatenate(output_x, axis=0))))
 
         y = y.cpu().double()    
         mixed_y = (y.T * lam_vector).T + (y[index].T * (1.0 - lam_vector)).T
+        mixed_y = mixed_y.detach().numpy()
         output_y.append(mixed_y)
-    return cuda((torch.tensor(np.concatenate(output_x, axis=0)).long())), cuda((torch.tensor(np.concatenate(output_y, axis=0)).long()))
+        
+    return cuda((torch.tensor(np.concatenate(output_x, axis=0)))), cuda((torch.tensor(np.concatenate(output_y, axis=0)).long()))
     #return cuda((torch.tensor(np.concatenate(output_x, axis=0)))), cuda((torch.tensor(np.concatenate(output_y, axis=0))))
 
 def mixup_data(x, y=None, alpha=0.2, runs=None):
@@ -476,10 +477,15 @@ def train(dataset):
     optimizer = AdamW(adamw_params(model), lr=args.learning_rate, eps=1e-8)
     for i, (inputs, label) in enumerate(train_loader, 1):
         #mixup
-        if args.do_mixup :
-            input_id, label = mixup_data(inputs[0], label)
+        #if args.do_mixup :
+        #    input_id, label = mixup_data(inputs[0], label)
             
         optimizer.zero_grad()
+        #print(model(*inputs))
+        
+        if args.do_mixup :
+            input_id, label = embed_mixup_data(model(*inputs), label)
+
         #print(model(*inputs))
 
         loss = criterion(model(*inputs), label)
@@ -501,11 +507,6 @@ def evaluate(dataset):
     eval_loss = 0.
     eval_loader = tqdm(load(dataset, args.batch_size, False))
     for i, (inputs, label) in enumerate(eval_loader, 1):
-        #mixup
-        #if args.do_mixup :
-        #    input_id, label = mixup_data(inputs[0], label)
-        #    inputs[0] = input_id
-        
         with torch.no_grad():
             loss = criterion(model(*inputs), label)
         eval_loss += loss.item()
