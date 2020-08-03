@@ -485,7 +485,7 @@ def train(dataset):
         
         if args.do_mixup :
             input_id, label = embed_mixup_data(model(*inputs), label)
-
+            inputs[0] = input_id
         #print(model(*inputs))
 
         loss = criterion(model(*inputs), label)
