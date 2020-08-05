@@ -27,7 +27,8 @@ parser.add_argument('--model', type=str, help='pre-trained model (bert-base-unca
 parser.add_argument('--task', type=str, help='task name (SNLI, MNLI, QQP, TwitterPPDB, SWAG, HellaSWAG)')
 parser.add_argument('--max_seq_length', type=int, default=256, help='max sequence length')
 parser.add_argument('--ckpt_path', type=str, help='model checkpoint path')
-parser.add_argument('--output_path', type=str, help='model output path')
+parser.add_argument('--dev_output_path', type=str, help='model dev output path')
+parser.add_argument('--test_output_path', type=str, help='model test output path')
 parser.add_argument('--train_path', type=str, help='train dataset path')
 parser.add_argument('--dev_path', type=str, help='dev dataset path')
 parser.add_argument('--test_path', type=str, help='test dataset path')
@@ -408,12 +409,12 @@ def embed_mixup_data(x, y=None, alpha=0.2, runs=None):
     for i in range(runs):
         lam_vector = np.random.beta(alpha, alpha, batch_size)
         lam_vector = torch.tensor(lam_vector)
-        index = np.random.permutation(batch_size)
+        index = torch.randperm(batch_size).cuda()
 
+        #print(x)
+        #print(type(x))
         x = x.cpu().double()
         mixed_x = (x.T * lam_vector).T + (x[index, :].T * (1.0 - lam_vector)).T
-        mixed_x = mixed_x.detach().numpy()
-        output_x.append(mixed_x)
 
         if y is None:
             return cuda((torch.tensor(np.concatenate(output_x, axis=0))))
@@ -421,10 +422,27 @@ def embed_mixup_data(x, y=None, alpha=0.2, runs=None):
 
         y = y.cpu().double()    
         mixed_y = (y.T * lam_vector).T + (y[index].T * (1.0 - lam_vector)).T
-        mixed_y = mixed_y.detach().numpy()
-        output_y.append(mixed_y)
-        
-    return cuda((torch.tensor(np.concatenate(output_x, axis=0)))), cuda((torch.tensor(np.concatenate(output_y, axis=0)).long()))
+        #mixed_y = mixed_y.cpu().data.numpy()
+
+    '''print('asdfasdf')
+    print(output_y)
+    print('asdf')
+    print(np.concatenate(output_y, axis=0))
+    print('aa')
+    print(cuda((torch.tensor(np.concatenate(output_y, axis=0)))))
+    print('bb')
+    print(mixed_y)
+
+
+    print('output_x')
+    print(output_x)
+    print('cat')
+    print(torch.cat([output_x], dim =0))'''
+    #print((np.concatenate(output_x, axis=0)))
+    #print(cuda((torch.tensor(np.concatenate(output_x, axis=0)))), cuda((torch.tensor(np.concatenate(output_y, axis=0)).long())))
+    
+    #return cuda(torch.tensor())
+    return cuda(mixed_x), cuda(mixed_y.long())
     #return cuda((torch.tensor(np.concatenate(output_x, axis=0)))), cuda((torch.tensor(np.concatenate(output_y, axis=0))))
 
 def mixup_data(x, y=None, alpha=0.2, runs=None):
@@ -484,11 +502,14 @@ def train(dataset):
         #print(model(*inputs))
         
         if args.do_mixup :
-            input_id, label = embed_mixup_data(model(*inputs), label)
-            inputs[0] = input_id
-        #print(model(*inputs))
-
-        loss = criterion(model(*inputs), label)
+            #print(inputs)
+            model_output = model(*inputs)
+            embedded_mixup, label = embed_mixup_data(model_output, label)
+            loss = criterion(embedded_mixup, label)
+            #print(type(loss))
+        else:
+            loss = criterion(model(*inputs), label)
+            
         train_loss += loss.item()
         train_loader.set_description(f'train loss = {(train_loss / i):.6f}')
         loss.backward()
@@ -576,9 +597,59 @@ if args.do_evaluate:
                 }
                 output_dicts.append(output_dict)
 
-    print(f'writing outputs to \'{args.output_path}\'')
+    print(f'writing outputs to \'{args.test_output_path}\'')
 
-    with open(args.output_path, 'w+') as f:
+    with open(args.test_output_path, 'w+') as f:
+        for i, output_dict in enumerate(output_dicts):
+            output_dict_str = json.dumps(output_dict)
+            f.write(f'{output_dict_str}\n')
+
+    y_true = [output_dict['true'] for output_dict in output_dicts]
+    y_pred = [output_dict['pred'] for output_dict in output_dicts]
+    y_conf = [output_dict['conf'] for output_dict in output_dicts]
+
+    accuracy = accuracy_score(y_true, y_pred) * 100.
+    f1 = f1_score(y_true, y_pred, average='macro') * 100.
+    confidence = np.mean(y_conf) * 100.
+
+    results_dict = {
+        'accuracy': accuracy_score(y_true, y_pred) * 100.,
+        'macro-F1': f1_score(y_true, y_pred, average='macro') * 100.,
+        'confidence': np.mean(y_conf) * 100.,
+    }
+    for k, v in results_dict.items():
+        print(f'{k} = {v}')
+
+if args.do_evaluate:
+    if not os.path.exists(args.ckpt_path):
+        raise RuntimeError(f'\'{args.ckpt_path}\' does not exist')
+    
+    print()
+    print('*** evaluation json extract ***')
+
+    output_dicts = []
+    model.load_state_dict(torch.load(args.ckpt_path))
+    model.eval()
+    dev_loader = tqdm(load(dev_dataset, args.batch_size, False))
+
+    for i, (inputs, label) in enumerate(dev_loader):
+        with torch.no_grad():
+            logits = model(*inputs)
+            for j in range(logits.size(0)):
+                probs = F.softmax(logits[j], -1)
+                output_dict = {
+                    'index': args.batch_size * i + j,
+                    'true': label[j].item(),
+                    'pred': logits[j].argmax().item(),
+                    'conf': probs.max().item(),
+                    'logits': logits[j].cpu().numpy().tolist(),
+                    'probs': probs.cpu().numpy().tolist(),
+                }
+                output_dicts.append(output_dict)
+
+    print(f'writing outputs to \'{args.dev_output_path}\'')
+
+    with open(args.dev_output_path, 'w+') as f:
         for i, output_dict in enumerate(output_dicts):
             output_dict_str = json.dumps(output_dict)
             f.write(f'{output_dict_str}\n')
