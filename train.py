@@ -27,7 +27,8 @@ parser.add_argument('--model', type=str, help='pre-trained model (bert-base-unca
 parser.add_argument('--task', type=str, help='task name (SNLI, MNLI, QQP, TwitterPPDB, SWAG, HellaSWAG)')
 parser.add_argument('--max_seq_length', type=int, default=256, help='max sequence length')
 parser.add_argument('--ckpt_path', type=str, help='model checkpoint path')
-parser.add_argument('--output_path', type=str, help='model output path')
+parser.add_argument('--dev_output_path', type=str, help='model dev output path')
+parser.add_argument('--test_output_path', type=str, help='model test output path')
 parser.add_argument('--train_path', type=str, help='train dataset path')
 parser.add_argument('--dev_path', type=str, help='dev dataset path')
 parser.add_argument('--test_path', type=str, help='test dataset path')
@@ -532,9 +533,59 @@ if args.do_evaluate:
                 }
                 output_dicts.append(output_dict)
 
-    print(f'writing outputs to \'{args.output_path}\'')
+    print(f'writing outputs to \'{args.test_output_path}\'')
 
-    with open(args.output_path, 'w+') as f:
+    with open(args.test_output_path, 'w+') as f:
+        for i, output_dict in enumerate(output_dicts):
+            output_dict_str = json.dumps(output_dict)
+            f.write(f'{output_dict_str}\n')
+
+    y_true = [output_dict['true'] for output_dict in output_dicts]
+    y_pred = [output_dict['pred'] for output_dict in output_dicts]
+    y_conf = [output_dict['conf'] for output_dict in output_dicts]
+
+    accuracy = accuracy_score(y_true, y_pred) * 100.
+    f1 = f1_score(y_true, y_pred, average='macro') * 100.
+    confidence = np.mean(y_conf) * 100.
+
+    results_dict = {
+        'accuracy': accuracy_score(y_true, y_pred) * 100.,
+        'macro-F1': f1_score(y_true, y_pred, average='macro') * 100.,
+        'confidence': np.mean(y_conf) * 100.,
+    }
+    for k, v in results_dict.items():
+        print(f'{k} = {v}')
+
+if args.do_evaluate:
+    if not os.path.exists(args.ckpt_path):
+        raise RuntimeError(f'\'{args.ckpt_path}\' does not exist')
+    
+    print()
+    print('*** evaluation json extract ***')
+
+    output_dicts = []
+    model.load_state_dict(torch.load(args.ckpt_path))
+    model.eval()
+    dev_loader = tqdm(load(dev_dataset, args.batch_size, False))
+
+    for i, (inputs, label) in enumerate(dev_loader):
+        with torch.no_grad():
+            logits = model(*inputs)
+            for j in range(logits.size(0)):
+                probs = F.softmax(logits[j], -1)
+                output_dict = {
+                    'index': args.batch_size * i + j,
+                    'true': label[j].item(),
+                    'pred': logits[j].argmax().item(),
+                    'conf': probs.max().item(),
+                    'logits': logits[j].cpu().numpy().tolist(),
+                    'probs': probs.cpu().numpy().tolist(),
+                }
+                output_dicts.append(output_dict)
+
+    print(f'writing outputs to \'{args.dev_output_path}\'')
+
+    with open(args.dev_output_path, 'w+') as f:
         for i, output_dict in enumerate(output_dicts):
             output_dict_str = json.dumps(output_dict)
             f.write(f'{output_dict_str}\n')
