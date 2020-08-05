@@ -41,6 +41,7 @@ parser.add_argument('--max_grad_norm', type=float, default=1., help='gradient cl
 parser.add_argument('--do_train', action='store_true', default=False, help='enable training')
 parser.add_argument('--do_evaluate', action='store_true', default=False, help='enable evaluation')
 parser.add_argument('--do_mixup', action='store_true', default=False, help='enable mixup')
+parser.add_argument('--do_mixup_label', action='store_true', default=False, help='enable label mixup')
 
 args = parser.parse_args()
 print(args)
@@ -417,33 +418,12 @@ def embed_mixup_data(x, y=None, alpha=0.2, runs=None):
         mixed_x = (x.T * lam_vector).T + (x[index, :].T * (1.0 - lam_vector)).T
 
         if y is None:
-            return cuda((torch.tensor(np.concatenate(output_x, axis=0))))
-            #return cuda((torch.tensor(np.concatenate(output_x, axis=0))))
-
+            return cuda(mixed_x)
+            
         y = y.cpu().double()    
         mixed_y = (y.T * lam_vector).T + (y[index].T * (1.0 - lam_vector)).T
-        #mixed_y = mixed_y.cpu().data.numpy()
-
-    '''print('asdfasdf')
-    print(output_y)
-    print('asdf')
-    print(np.concatenate(output_y, axis=0))
-    print('aa')
-    print(cuda((torch.tensor(np.concatenate(output_y, axis=0)))))
-    print('bb')
-    print(mixed_y)
-
-
-    print('output_x')
-    print(output_x)
-    print('cat')
-    print(torch.cat([output_x], dim =0))'''
-    #print((np.concatenate(output_x, axis=0)))
-    #print(cuda((torch.tensor(np.concatenate(output_x, axis=0)))), cuda((torch.tensor(np.concatenate(output_y, axis=0)).long())))
-    
-    #return cuda(torch.tensor())
+       
     return cuda(mixed_x), cuda(mixed_y.long())
-    #return cuda((torch.tensor(np.concatenate(output_x, axis=0)))), cuda((torch.tensor(np.concatenate(output_y, axis=0))))
 
 def mixup_data(x, y=None, alpha=0.2, runs=None):
     """This method performs mixup. If runs = 1 it just does 1 mixup with whole batch, any n of runs
@@ -503,8 +483,18 @@ def train(dataset):
         
         if args.do_mixup :
             #print(inputs)
+            
             model_output = model(*inputs)
-            embedded_mixup, label = embed_mixup_data(model_output, label)
+            #print('original out')
+            #print(label)
+            if args.do_mixup_label :
+                embedded_mixup, label = embed_mixup_data(model_output, label)
+                #print('T out')
+                #print(label)
+            else:    
+                embedded_mixup = embed_mixup_data(model_output)
+                #print('F out')
+                #print(label)
             loss = criterion(embedded_mixup, label)
             #print(type(loss))
         else:
