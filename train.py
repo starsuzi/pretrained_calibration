@@ -41,6 +41,7 @@ parser.add_argument('--max_grad_norm', type=float, default=1., help='gradient cl
 parser.add_argument('--do_train', action='store_true', default=False, help='enable training')
 parser.add_argument('--do_evaluate', action='store_true', default=False, help='enable evaluation')
 parser.add_argument('--do_mixup', action='store_true', default=False, help='enable mixup')
+parser.add_argument('--do_mixup_label', action='store_true', default=False, help='enable label mixup')
 
 args = parser.parse_args()
 print(args)
@@ -437,9 +438,24 @@ def train(dataset):
     
     optimizer = AdamW(adamw_params(model), lr=args.learning_rate, eps=1e-8)
     for i, (inputs, label) in enumerate(train_loader, 1):
+        #print('original in')
+        #print(inputs[0])
+        #print('original out')
+        #print(label)
         #mixup
         if args.do_mixup :
-            input_id, label = mixup_data(inputs[0], label)
+            if args.do_mixup_label :
+                input_id, label = mixup_data(inputs[0], label)
+                #print('T in')
+                #print(input_id)
+                #print('T out')
+                #print(label)
+            else :
+                input_id = mixup_data(inputs[0])
+                #print('F in')
+                #print(input_id)
+                #print('F out')
+                #print(label)
             inputs[0] = input_id
             
         optimizer.zero_grad()
